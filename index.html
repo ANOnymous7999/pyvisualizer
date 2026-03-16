@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyVisualizer — Python Execution Tracer</title>
+  <meta name="description"
+    content="Python Tutor-style execution visualizer: execution arrow, frames panel, heap panel, SVG reference arrows, GSAP animations." />
+  <link rel="stylesheet" href="style.css" />
+  <!-- CodeMirror -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <!-- GSAP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- Header -->
+    <header>
+      <div class="logo-ring" aria-hidden="true"></div>
+      <div>
+        <div class="logo-title">PyVisualizer</div>
+        <div class="logo-sub">Python Execution Tracer</div>
+      </div>
+      <div class="sp"></div>
+      <!-- Panel Visibility Toggles -->
+      <div id="panel-toggles">
+        <span class="toggle-label">Panels:</span>
+        <button class="ptoggle active" data-target="panel-editor" title="Toggle Code Editor">Editor</button>
+        <button class="ptoggle active" data-target="panel-frames" title="Toggle Frames">Frames</button>
+        <button class="ptoggle active" data-target="panel-heap" title="Toggle Heap">Heap</button>
+        <button class="ptoggle" data-target="panel-vfs" title="Toggle File System" id="ptoggle-vfs"
+          style="display:none">Files</button>
+        <button class="ptoggle active" data-target="panel-out" title="Toggle Terminal">Terminal</button>
+      </div>
+      <span class="hpill">sys.settrace</span>
+    </header>
+
+    <!-- Main layout: flex row -->
+    <main id="main-layout">
+
+      <!-- PANEL: Editor -->
+      <section id="panel-editor" class="panel panel-col">
+        <div class="panel-header" draggable="true">
+          <span class="drag-handle">⠿</span>
+          <span class="panel-title">Code Editor</span>
+          <span class="panel-info">Ctrl+Enter to run</span>
+          <button class="panel-toggle" title="Collapse">—</button>
+        </div>
+        <div class="panel-content panel-flex-col">
+          <div id="editor-wrap"></div>
+          <div id="run-bar">
+            <button id="btn-run">▶&nbsp; Run</button>
+            <button id="btn-clear">↺ Reset</button>
+            <span id="step-ctr"></span>
+          </div>
+        </div>
+      </section>
+
+      <div class="resizer-v" data-left="panel-editor" data-right="right-side"></div>
+
+      <!-- RIGHT SIDE -->
+      <div id="right-side" class="panel-col">
+
+        <!-- Playbar + Line strip always visible at top of right side -->
+        <div id="playbar" role="toolbar">
+          <button class="pb" id="pb-first" disabled>⏮</button>
+          <button class="pb" id="pb-prev" disabled>◀</button>
+          <button class="pb" id="pb-play" disabled>▶</button>
+          <button class="pb" id="pb-next" disabled>▶|</button>
+          <span id="spd-lbl">Speed</span>
+          <input id="spd" type="range" min="1" max="100" value="55" aria-label="Speed" />
+          <div class="prog-track">
+            <div id="prog-fill"></div>
+          </div>
+        </div>
+
+        <div id="line-strip">
+          <span id="scope-pill" class="scope-pill sp-mod"></span>
+          <code id="line-code"></code>
+        </div>
+
+        <!-- Middle row: Frames + Heap side by side -->
+        <div id="viz-row" style="flex: 1; display: flex; overflow: hidden; min-height: 0;">
+
+          <!-- Idle placeholder -->
+          <div id="idle">
+            <div class="idle-icon">🐍</div>
+            <p>Run your code to start.<br /><br />
+              <span class="kbd">&larr; &rarr;</span> step &nbsp; <span class="kbd">Space</span> play
+            </p>
+          </div>
+
+          <!-- Frames panel -->
+          <section id="panel-frames" class="panel panel-col" style="display:none; flex: 0 0 35%;">
+            <div class="panel-header" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="panel-title">📦 Frames &amp; Variables</span>
+              <button class="panel-toggle">—</button>
+            </div>
+            <div class="panel-content" id="frames-panel" style="overflow-y: auto; padding: 14px;"></div>
+          </section>
+
+          <div class="resizer-v viz-resizer" data-left="panel-frames" data-right="panel-heap"></div>
+
+          <!-- Heap panel -->
+          <section id="panel-heap" class="panel panel-col" style="display:none; flex: 1;">
+            <div class="panel-header" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="panel-title">🗃️ Objects (Heap)</span>
+              <button class="panel-toggle">—</button>
+            </div>
+            <div class="panel-content" id="heap-panel" style="overflow-y: auto; padding: 14px;"></div>
+          </section>
+
+          <!-- SVG for arrows -->
+          <svg id="arrow-svg" style="position:absolute;inset:0;pointer-events:none;z-index:10;overflow:visible"
+            aria-hidden="true"></svg>
+        </div>
+
+        <div class="resizer-h" data-top="viz-row" data-bottom="panel-bottom"></div>
+
+        <!-- BOTTOM: VFS + Terminal stacked -->
+        <div id="panel-bottom" style="flex: 0 0 200px; display: flex; flex-direction: column; overflow: hidden;">
+
+          <!-- PANEL: VFS -->
+          <section id="panel-vfs" class="panel panel-col" style="display:none; flex: 0 0 50%;">
+            <div class="panel-header" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="panel-title">📂 File System</span>
+              <button class="panel-toggle">—</button>
+            </div>
+            <div class="panel-content" style="overflow: auto; padding: 10px;">
+              <div id="vfs-container"></div>
+            </div>
+          </section>
+
+          <div class="resizer-h vfs-resizer" style="display:none" data-top="panel-vfs" data-bottom="panel-out"></div>
+
+          <!-- PANEL: Output -->
+          <section id="panel-out" class="panel panel-col" style="flex: 1;">
+            <div class="panel-header" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="panel-title">⚡ Terminal Output</span>
+              <button class="panel-toggle">—</button>
+            </div>
+            <div class="panel-content" style="overflow: auto; padding: 10px;">
+              <pre id="out-content" style="margin:0; min-height:20px;"></pre>
+              <pre id="err-content" style="margin:0; color:#ff5555;"></pre>
+            </div>
+          </section>
+
+        </div><!-- /panel-bottom -->
+      </div><!-- /right-side -->
+    </main>
+  </div>
+  <script src="main.js"></script>
+</body>
+
+</html>
